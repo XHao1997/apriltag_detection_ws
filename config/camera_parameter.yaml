@@ -1,0 +1,15 @@
+camera_intrinsics:
+  coeffs:
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 0.0
+  fx: 607.34
+  fy: 607.415
+  height: 480
+  model: inverse_brown_conrady
+  ppx: 331.404
+  ppy: 239.84
+  width: 640
+  depth_scale: 0.0010000000474974513
