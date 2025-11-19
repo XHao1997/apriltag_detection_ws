@@ -34,7 +34,7 @@ def generate_launch_description():
     )
 
     # Parameter file for camera intrinsics (used by apriltag_tf.py)
-    project_name = 'robot_vision'  # project name
+    project_name = 'apriltag_detection'  # project name
 
     # Prefer an absolute path resolved from the package share directory so
     # the node can open the file regardless of the current working directory.
@@ -50,7 +50,7 @@ def generate_launch_description():
 
     # AprilTag detector subscribes to the color image
     apriltag_node = Node(
-        package='robot_vision',
+        package='apriltag_detection',
         executable='apriltag_detection.py',
         name='apriltag_detection',
         output='screen',
@@ -62,7 +62,7 @@ def generate_launch_description():
 
     # TF node uses tag center + aligned depth
     apriltag_tf_node = Node(
-        package='robot_vision',
+        package='apriltag_detection',
         executable='apriltag_tf.py',
         name='apriltag_tf',
         output='screen',

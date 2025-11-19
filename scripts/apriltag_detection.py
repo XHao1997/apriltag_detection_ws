@@ -19,8 +19,8 @@ from cv_bridge import CvBridge
 from pupil_apriltags import Detector
 import cv2
 from utils.realsense_helper import draw_img_detections, rotation_matrix_to_quaternion
-
-
+from tf2_ros import TransformBroadcaster
+from geometry_msgs.msg import TransformStamped
 class AprilTagNode(Node):
 	def __init__(self):
 
@@ -28,13 +28,14 @@ class AprilTagNode(Node):
 		self.declare_parameter('image_topic', '/camera/camera/color/image_raw')
 		self.declare_parameter('tag_family', 'tag36h11')
 		self.declare_parameter('publish_frame', 'tag_link')
-		self.declare_parameter('tag_size', 0.162)  
+		self.declare_parameter('tag_size', 0.0235)  
 		self.declare_parameter('camera_intrinsics_yaml', 'src/robot_vision/config/camera_parameter.yaml')
+		self.declare_parameter('use_rgb_3d_estimate', True)
 		image_topic = self.get_parameter('image_topic').get_parameter_value().string_value
 		tag_family = self.get_parameter('tag_family').get_parameter_value().string_value
 		self.publish_frame = self.get_parameter('publish_frame').get_parameter_value().string_value
 		self.tag_size = self.get_parameter('tag_size').get_parameter_value().double_value
-
+		self.use_rgb_3d_estimate = self.get_parameter('use_rgb_3d_estimate').get_parameter_value().bool_value
 		self.bridge = CvBridge()
 		self.detector = Detector(families=tag_family,
 			nthreads=1,
@@ -48,7 +49,7 @@ class AprilTagNode(Node):
 		self.detect_img_pub = self.create_publisher(Image, '/tag_detections_img', 5)
 		# publish each tag center in pixel coordinates: PointStamped (x=px, y=py, z=tag_id)
 		self.center_pub = self.create_publisher(Transform, '/tag_center_pixel', 5)
-		
+		self.tf_broadcaster = TransformBroadcaster(self)
 		self.sub = self.create_subscription(Image, image_topic, self.image_cb, 5)
 		self.get_logger().info(f'Subscribed to {image_topic}, publishing tag poses on /tag_link')
 		self.get_logger().info("AprilTag detection running...")
@@ -63,12 +64,12 @@ class AprilTagNode(Node):
 			self.get_logger().error(f'cv_bridge failed: {e}')
 			return
 		gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY).astype(np.uint8)
-		raw = self.detector.detect(gray_image, camera_params=(634.34, 607.415, 331.404, 239.84), 
+		raw = self.detector.detect(gray_image, camera_params=(604.1043701171875, 602.6361694335938, 327.3217468261719, 237.50177001953125), 
 							 		estimate_tag_pose=True, tag_size=self.tag_size)
 		if raw is None:
 			return
 		if isinstance(raw, (list, tuple)):
-			tags = list(raw)
+			tags = list(raw) 
 
 		else:
 			tags = [raw]
@@ -92,7 +93,7 @@ class AprilTagNode(Node):
 				except Exception:
 					continue
 				tag_q = rotation_matrix_to_quaternion(np.asarray(tag.pose_R))
-				print(f'Detected rotation (quaternion): {tag_q}')
+				# print(f'Detected rotation (quaternion): {tag_q}')
 				pt = Transform()
 				pt.translation.x = px
 				pt.translation.y = py
@@ -108,12 +109,33 @@ class AprilTagNode(Node):
 				if tag_id is None:
 					tag_id = -1
 				try:
-					print(f'Detected tag ID: {tag_id}')
+					self.get_logger().info(f'Detected tag ID: {tag_id}')
 					pt.translation.z = float(tag_id)
 				except Exception:
 					pt.translation.z = float(-1)
 				self.center_pub.publish(pt)
+				if self.use_rgb_3d_estimate and hasattr(tag, 'pose_t') and hasattr(tag, 'pose_R'):
+					t = TransformStamped()
+					t.header.stamp = msg.header.stamp
+					t.header.frame_id = "camera_color_optical_frame"                  # "color_optical"
+					# choose a child name; re-use your publish_frame + id, or just "tag_<id>"
+					child = f"{self.publish_frame}_{int(tag_id)}" if tag_id is not None else f"{self.publish_frame}"
+					t.child_frame_id = child
 
+					# pose_t is (tx, ty, tz) in meters (pupil_apriltags, camera->tag)
+					tx, ty, tz = map(float, np.asarray(tag.pose_t).reshape(-1))
+					t.transform.translation.x = tx
+					t.transform.translation.y = ty
+					t.transform.translation.z = tz
+
+					# pose_R -> quaternion (camera->tag)
+					qx, qy, qz, qw = rotation_matrix_to_quaternion(np.asarray(tag.pose_R))
+					t.transform.rotation.x = qx
+					t.transform.rotation.y = qy
+					t.transform.rotation.z = qz
+					t.transform.rotation.w = qw
+
+					self.tf_broadcaster.sendTransform(t)
 		# publish annotated image once per callback
 		annotated = draw_img_detections(cv_image.copy(), tags)
 		try:
