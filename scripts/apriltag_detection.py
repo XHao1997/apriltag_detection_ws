@@ -11,6 +11,7 @@ This is a minimal implementation intended to be placed under the package's
 import sys
 import math
 import numpy as np
+import yaml
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
@@ -21,6 +22,8 @@ import cv2
 from utils.realsense_helper import draw_img_detections, rotation_matrix_to_quaternion
 from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped
+import yaml
+
 class AprilTagNode(Node):
 	def __init__(self):
 
@@ -28,9 +31,18 @@ class AprilTagNode(Node):
 		self.declare_parameter('image_topic', '/camera/camera/color/image_raw')
 		self.declare_parameter('tag_family', 'tag36h11')
 		self.declare_parameter('publish_frame', 'tag_link')
-		self.declare_parameter('tag_size', 0.0235)  
-		self.declare_parameter('camera_intrinsics_yaml', 'src/robot_vision/config/camera_parameter.yaml')
-		self.declare_parameter('use_rgb_3d_estimate', True)
+
+		self.declare_parameter('tag_size', 0.162)  
+		self.declare_parameter('camera_intrinsics_yaml_path', 'src/robot_vision/config/camera_parameter.yaml')
+		camera_intrinsics_yaml_path = self.get_parameter('camera_intrinsics_yaml_path').get_parameter_value().string_value
+		with open(camera_intrinsics_yaml_path, 'r') as f:
+			data = yaml.load(f, Loader=yaml.SafeLoader)
+		self.intrinsics = {
+			'fx': data.get('camera_intrinsics')['fx'],
+			'fy': data.get('camera_intrinsics')['fy'],
+			'ppx': data.get('camera_intrinsics')['ppx'],
+			'ppy': data.get('camera_intrinsics')['ppy'],
+		}
 		image_topic = self.get_parameter('image_topic').get_parameter_value().string_value
 		tag_family = self.get_parameter('tag_family').get_parameter_value().string_value
 		self.publish_frame = self.get_parameter('publish_frame').get_parameter_value().string_value
@@ -64,8 +76,9 @@ class AprilTagNode(Node):
 			self.get_logger().error(f'cv_bridge failed: {e}')
 			return
 		gray_image = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY).astype(np.uint8)
-		raw = self.detector.detect(gray_image, camera_params=(604.1043701171875, 602.6361694335938, 327.3217468261719, 237.50177001953125), 
-							 		estimate_tag_pose=True, tag_size=self.tag_size)
+
+		raw = self.detector.detect(gray_image, camera_params=(self.intrinsics['fx'], self.intrinsics['fy'], self.intrinsics['ppx'], self.intrinsics['ppy']), 
+							    	estimate_tag_pose=True, tag_size=self.tag_size)
 		if raw is None:
 			return
 		if isinstance(raw, (list, tuple)):
