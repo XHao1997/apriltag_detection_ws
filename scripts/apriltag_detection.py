@@ -149,7 +149,7 @@ class AprilTagNode(Node):
 					t.transform.rotation.w = qw
 
 					self.tf_broadcaster.sendTransform(t)
-		# publish annotated image once per callback
+					
 		annotated = draw_img_detections(cv_image.copy(), tags)
 		try:
 			self.detect_img_pub.publish(self.bridge.cv2_to_imgmsg(annotated, encoding='bgr8'))
