@@ -34,7 +34,7 @@ def generate_launch_description():
     )
 
     # Parameter file for camera intrinsics (used by apriltag_tf.py)
-    project_name = 'apriltag_detection'  # project name
+    project_name = 'apriltag_detection' 
 
     # Prefer an absolute path resolved from the package share directory so
     # the node can open the file regardless of the current working directory.

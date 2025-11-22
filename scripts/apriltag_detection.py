@@ -31,8 +31,9 @@ class AprilTagNode(Node):
 		self.declare_parameter('image_topic', '/camera/camera/color/image_raw')
 		self.declare_parameter('tag_family', 'tag36h11')
 		self.declare_parameter('publish_frame', 'tag_link')
+		self.declare_parameter('use_rgb_3d_estimate', True)
 
-		self.declare_parameter('tag_size', 0.162)  
+		self.declare_parameter('tag_size', 0.096)  
 		self.declare_parameter('camera_intrinsics_yaml_path', 'src/robot_vision/config/camera_parameter.yaml')
 		camera_intrinsics_yaml_path = self.get_parameter('camera_intrinsics_yaml_path').get_parameter_value().string_value
 		with open(camera_intrinsics_yaml_path, 'r') as f:

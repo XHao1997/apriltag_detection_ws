@@ -7,7 +7,6 @@ Panels:
         - /Global Options1
         - /Status1
         - /DepthCloud1
-        - /DepthCloud1/Status1
         - /DepthCloud1/Auto Size1
         - /DepthCloud1/Occlusion Compensation1
         - /Pose1
@@ -110,6 +109,38 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Reliable
         Value: /tag_point_pose
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Filter (blacklist): ""
+      Filter (whitelist): ""
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+        camera_color_frame:
+          Value: true
+        camera_color_optical_frame:
+          Value: true
+        camera_depth_frame:
+          Value: true
+        camera_depth_optical_frame:
+          Value: true
+        camera_link:
+          Value: true
+      Marker Scale: 1
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: false
+      Tree:
+        camera_link:
+          camera_color_frame:
+            camera_color_optical_frame:
+              {}
+          camera_depth_frame:
+            camera_depth_optical_frame:
+              {}
+      Update Interval: 0
       Value: true
   Enabled: true
   Global Options:
