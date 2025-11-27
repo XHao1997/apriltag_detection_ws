@@ -17,13 +17,13 @@ def generate_launch_description():
             get_package_share_directory(realsense_package_name), 'launch', 'rs_launch.py'
         )]), launch_arguments={
             
-                'depth_module.depth_profile': '640x480x60',
-                'depth_module.infra_profile': '640x480x60', 
-                'rgb_camera.color_profile': '640x480x60',
+                'depth_module.depth_profile': '848x480x60',
+                'depth_module.infra_profile': '848x480x60', 
+                'rgb_camera.color_profile': '848x480x60',
                 'enable_depth': 'True',
                 'enable_color': 'True',
                 'clip_distance': '1.5', 
-                'pointcloud.enable':'False',
+                'pointcloud.enable':'True',
                 'align_depth.enable':'True',
                 'initial_reset': 'True'
             }.items()

@@ -21,13 +21,10 @@ def generate_launch_description():
             )
         ),
         launch_arguments={
-                'depth_module.depth_profile': '640x480x60',
-                'depth_module.infra_profile': '640x480x60', 
-                'rgb_camera.color_profile': '640x480x60',
-                'enable_depth': 'True',
+                'depth_module.profile': '484x480x10',
                 'enable_color': 'True',
                 'clip_distance': '1.5', 
-                'pointcloud.enable':'False',
+                'enable_rgbd.enable':'True',
                 'align_depth.enable':'True',
                 'initial_reset': 'True'
         }.items()
@@ -56,7 +53,7 @@ def generate_launch_description():
         output='screen',
         emulate_tty=True,
         parameters=[{
-            'image_topic': '/camera/camera/color/image_raw',            # fixed topic
+            'image_topic': '/camera/camera/color/image_rect_raw',            # fixed topic
         }],
     )
 
@@ -69,7 +66,7 @@ def generate_launch_description():
         emulate_tty=True,
         parameters=[{
             'tag_center_topic': '/tag_center_pixel',
-            'depth_topic': '/camera/camera/aligned_depth_to_color/image_raw',  # fixed topic
+            'depth_topic': '/camera/camera/depth/image_rect_raw',  # fixed topic
             'intrinsics_yaml': LaunchConfiguration('params_file'),      # <- use the launch arg
             'camera_frame': 'camera_color_optical_frame',
         }],
@@ -90,9 +87,9 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        camera_intrinsics,   # make the arg visible to the launch system
+        camera_intrinsics,   
         rs_camera,
         apriltag_node,
-        apriltag_tf_node,
-        rviz2
+        # apriltag_tf_node,
+        # rviz2
     ])

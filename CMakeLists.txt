@@ -16,6 +16,7 @@ find_package(rclpy REQUIRED)
 set(PYTHON_EXECUTABLES
   scripts/apriltag_detection.py
   scripts/apriltag_tf.py
+  scripts/tree_keypoint.py
 )
 install(PROGRAMS ${PYTHON_EXECUTABLES}
   DESTINATION lib/${PROJECT_NAME}
@@ -32,7 +33,7 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}/
 )
 install(DIRECTORY
-  config
+  config weights
   DESTINATION share/${PROJECT_NAME}/
 )
 if(BUILD_TESTING)
