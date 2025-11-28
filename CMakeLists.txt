@@ -17,6 +17,8 @@ set(PYTHON_EXECUTABLES
   scripts/apriltag_detection.py
   scripts/apriltag_tf.py
   scripts/tree_keypoint.py
+  scripts/tree_base_recorder.py
+
 )
 install(PROGRAMS ${PYTHON_EXECUTABLES}
   DESTINATION lib/${PROJECT_NAME}
