@@ -7,7 +7,6 @@ from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 
 
-
 def generate_launch_description():
     realsense_package_name = 'realsense2_camera'
     
@@ -15,16 +14,21 @@ def generate_launch_description():
     rs_camera = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([os.path.join(
             get_package_share_directory(realsense_package_name), 'launch', 'rs_launch.py'
-        )]), launch_arguments={
-            
-                'depth_module.profile': '848x480x15',
-                'rgb_camera.profile': '848x480x15',
-                'rgbd_mode.enable': 'True',
-                'enable_color': 'True',
-                'clip_distance': '1.5', 
-                'pointcloud.enable':'True',
-                'align_depth.enable':'True',
-                'initial_reset': 'True'
+        )]),
+        launch_arguments={
+                # 'initial_reset': 'True',
+                'depth_module.power_line_frequency': '0',
+                 'depth_module.depth_profile': '848x480x15',
+                 "rgb_camera.profile":"848x480x15",
+                "accelerate_gpu_with_glsl.enable" : 'True',
+                "rgb_camera.color_profile":"640x480x15",
+                'align_depth.enable': 'True',
+
+                'pointcloud.enable': 'True',
+                'pointcloud.ordered_pc': 'True',
+
+                # FIX: override bad default (3) with valid value
+                # 0 = Off, 1 = 50 Hz, 2 = 60 Hz
             }.items()
     )
     

@@ -41,15 +41,19 @@ class AprilTagNode(Node):
         self.declare_parameter('image_topic', '/camera/camera/color/image_rect_raw')
         self.declare_parameter('tag_family', 'tag36h11')
         self.declare_parameter('publish_frame', 'tag_link')
-        self.declare_parameter('tag_size', 0.024)  # [m]
+        self.declare_parameter('tag_size', 0.02975)  # [m]
+        self.declare_parameter('tag_id', 0)
         self.declare_parameter(
             'camera_intrinsics_yaml',
             '/src/apriltag_detection/config/camera_parameter.yaml',
         )
+
         self.declare_parameter('use_rgb_3d_estimate', True)
         self.declare_parameter('camera_frame', 'camera_color_optical_frame')
         self.declare_parameter('debug', False)  # 是否调试输出和画图
 
+
+        self.tag_id = self.get_parameter('tag_id').get_parameter_value().integer_value
         image_topic = self.get_parameter('image_topic').get_parameter_value().string_value
         tag_family = self.get_parameter('tag_family').get_parameter_value().string_value
         self.publish_frame = self.get_parameter('publish_frame').get_parameter_value().string_value
@@ -67,14 +71,14 @@ class AprilTagNode(Node):
         # ---------------- 工具 & 检测器 ----------------
         self.bridge = CvBridge()
         self.detector = Detector(
-            families=tag_family,
-            nthreads=2,
-            quad_decimate=1.0,   # 如需进一步提速，可改为 2.0
-            quad_sigma=0.0,
-            refine_edges=1,
-            decode_sharpening=0.25,
-            debug=0,
-        )
+                families="tag36h11",
+                nthreads=1,
+                quad_decimate=1.0,
+                quad_sigma=0.8,
+                refine_edges=1,
+                decode_sharpening=0.25,
+                debug=0
+                )
 
         # ---------------- Publisher & Subscriber ----------------
         qos_image = qos_profile_sensor_data  # 预设的传感器数据 QoSProfile

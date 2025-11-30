@@ -18,6 +18,7 @@ set(PYTHON_EXECUTABLES
   scripts/apriltag_tf.py
   scripts/tree_keypoint.py
   scripts/tree_base_recorder.py
+  scripts/detect_tree_base_3d.py
 
 )
 install(PROGRAMS ${PYTHON_EXECUTABLES}

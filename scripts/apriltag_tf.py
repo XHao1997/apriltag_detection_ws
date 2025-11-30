@@ -25,7 +25,7 @@ class DetTFNode(Node):
         self.declare_parameter('depth_topic', '/camera/camera/depth/image_rect_raw')
         self.declare_parameter('intrinsics_yaml', 'src/robot_vision/config/camera_parameter.yaml')
         self.declare_parameter('camera_frame', 'camera_color_optical_frame')
-        self.declare_parameter('depth_scale', 0.0010000000474974513)
+        self.declare_parameter('depth_scale', 9.999999747378752e-05 )
 
         tag_center_topic = self.get_parameter('tag_center_topic').get_parameter_value().string_value
         depth_topic = self.get_parameter('depth_topic').get_parameter_value().string_value
