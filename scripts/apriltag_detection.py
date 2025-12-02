@@ -41,7 +41,7 @@ class AprilTagNode(Node):
         self.declare_parameter('image_topic', '/camera/camera/color/image_rect_raw')
         self.declare_parameter('tag_family', 'tag36h11')
         self.declare_parameter('publish_frame', 'tag_link')
-        self.declare_parameter('tag_size', 0.02975)  # [m]
+        self.declare_parameter('tag_size', 0.03)  # [m]
         self.declare_parameter('tag_id', 0)
         self.declare_parameter(
             'camera_intrinsics_yaml',
@@ -75,8 +75,8 @@ class AprilTagNode(Node):
                 nthreads=1,
                 quad_decimate=1.0,
                 quad_sigma=0.8,
-                refine_edges=1,
-                decode_sharpening=0.25,
+                refine_edges=0,
+                decode_sharpening=0.05,
                 debug=0
                 )
 
@@ -237,9 +237,9 @@ class AprilTagNode(Node):
 
         # ---- 发布到 /tag_center_pixel （用 Transform 携带信息）----
         pt = Transform()
-        pt.translation.x = px                # 像素 x
-        pt.translation.y = py                # 像素 y
-        pt.translation.z = tag_id_float      # 用 z 携带 tag id
+        pt.translation.x = px               
+        pt.translation.y = py               
+        pt.translation.z = tag_id_float     
 
         pt.rotation.x = q[0]
         pt.rotation.y = q[1]

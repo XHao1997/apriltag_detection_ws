@@ -29,7 +29,7 @@ class TreeBaseTo3DNode(Node):
 
         # Depth scale: meters per depth unit for uint16 depth
         # e.g., RealSense default: 0.001 for mm; adjust if needed or make a ROS param
-        self.depth_scale = 0.001
+        self.depth_scale = 9.999999747378752e-05
 
         # Subscriptions
         # 1) Depth image aligned to color
