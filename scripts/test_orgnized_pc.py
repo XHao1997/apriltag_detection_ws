@@ -9,7 +9,7 @@ from geometry_msgs.msg import PointStamped
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py import point_cloud2 as pc2
 from visualization_msgs.msg import Marker
-
+from utils.cloud_segmentation import read_pointcloud_index
 
 class CenterPointFromCloud(Node):
     def __init__(self):
@@ -42,7 +42,7 @@ class CenterPointFromCloud(Node):
     def pointcloud_callback(self, msg: PointCloud2):
         # Check organized cloud
         if msg.height == 1:
-            self.get_logger().warn_once(
+            self.get_logger().warn(
                 'PointCloud2 is unorganized (height=1). '
                 'Center pixel concept may not be valid.'
             )
@@ -54,11 +54,11 @@ class CenterPointFromCloud(Node):
             return
 
         # Choose pixel (you can change to width//2, height//2)
-        u = 424
-        v = 240
+        u = 240
+        v = 424
 
         if u < 0 or u >= width or v < 0 or v >= height:
-            self.get_logger().warn_once(
+            self.get_logger().warn(
                 f'(u, v)=({u}, {v}) is out of bounds for cloud size {width}x{height}'
             )
             return
@@ -66,7 +66,7 @@ class CenterPointFromCloud(Node):
         # Read the 3D point at (u, v)
         points = pc2.read_points_numpy(
             msg,
-            field_names=('x', 'y', 'z'),
+            field_names=(['x', 'y', 'z']),
             skip_nans=False,
         )
 
@@ -75,11 +75,11 @@ class CenterPointFromCloud(Node):
                 f'No point at (u={u}, v={v}) in PointCloud2'
             )
             return
-        print(points)
+        # print(points)
         # Only one point requested → shape (1, 3)
-        x, y, z = map(float, points[v*width+u])
-        print(u, v)
-        print(x, y, z)
+        x, y, z = map(float, points[read_pointcloud_index(list_uv=[u,v], list_wh=[width,height])])
+        # print(u, v)
+        # print(x, y, z)
 
         # NaN / Inf check
         if (not math.isfinite(x)) or (not math.isfinite(y)) or (not math.isfinite(z)):
@@ -110,13 +110,13 @@ class CenterPointFromCloud(Node):
         marker.pose.orientation.w = 1.0
 
         # Sphere size in meters (0.2 is quite big; 0.02 is more typical)
-        marker.scale.x = 0.2
-        marker.scale.y = 0.2
-        marker.scale.z = 0.2
+        marker.scale.x = 0.05
+        marker.scale.y = 0.05
+        marker.scale.z = 0.05
 
         # Red sphere, fully opaque
         marker.color.r = 1.0
-        marker.color.g = 0.0
+        marker.color.g = 1.0
         marker.color.b = 0.0
         marker.color.a = 1.0
 
