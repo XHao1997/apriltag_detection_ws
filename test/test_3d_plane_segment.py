@@ -13,6 +13,10 @@ from visualization_msgs.msg import Marker
 from tf2_ros import Buffer, TransformListener
 from rm_ros_interfaces.srv import GetProbePosition
 from message_filters import Subscriber, TimeSynchronizer
+from moveit_msgs.msg import CartesianPoint
+
+
+
 # Ensure project root
 _current_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.abspath(os.path.join(_current_dir, '..', '..'))
@@ -47,8 +51,8 @@ class CenterPointFromCloud(Node):
 
         # 订阅与发布
         self.pc_sub = self.create_subscription(PointCloud2, '/camera/pointcloud2', self.cb, 10)
-        self.detect3d_sub = Subscriber(PointStamped, self.detection_3d_topic)
-        self.detect2d_sub = Subscriber(PointStamped, self.detection_2d_topic)
+        self.detect3d_sub = Subscriber(self, PointStamped, self.detection_3d_topic)
+        self.detect2d_sub = Subscriber(self, PointStamped, self.detection_2d_topic)
         self.soil_scan_server = self.create_service(GetProbePosition, 'get_probe_position', self.handle_probe_position)
         self.center_pub = self.create_publisher(PointStamped, '/center_point', 10)
         self.center_mk_pub = self.create_publisher(Marker, '/center_point_marker', 10)
@@ -61,13 +65,13 @@ class CenterPointFromCloud(Node):
         self.window_box_pub = self.create_publisher(Marker, '/window_box_marker', 10)
         # self.soil_scan_server = self.create_service(...)s
         # === 扫描配置 ===
-        self.window_size = 32        # 正方形窗口（像素）
+        self.window_size = 10        # 正方形窗口（像素）
         self.stride = 8              # 每次前进的像素数
-        self.sample_frames = 20       # 同一窗口累积 5 帧
+        self.sample_frames = 5       # 同一窗口累积 5 帧
 
         # 识别点（此处“假定一个识别坐标”）
-        self.recog_u = 100.0
-        self.recog_v = 100.0
+        self.recog_u = 100
+        self.recog_v = 100
 
         # 扫描状态（按你要求用 []）
         self.scan_center = []      # 当前窗口中心 (u, v)
@@ -288,8 +292,10 @@ class CenterPointFromCloud(Node):
                 self.scan_center = list(new_center)
                 self.frozen = True  # 新窗口开始再次收 5 帧
 
-    def handle_probe_position(self, request, response):
+    def handle_probe_position(self, request, response: GetProbePosition.Response):
         # Implement the service callback logic here
+        self.get_logger().info('Received GetProbePosition request.')
+        response.target_position = CartesianPoint()
         return response
 
 def main(args=None):
