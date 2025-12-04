@@ -134,7 +134,7 @@ def transform_cloud_to_frame(
 # ---------- 取窗口内点（正方形） ----------
 def extract_square_window_points(
     points_2d: np.ndarray,
-    center_uv: list[np.float32],
+    center_uv: list,
     window_size: int,
     width: int, height: int
 ) -> Tuple[np.ndarray, Tuple[int, int, int, int]]:
@@ -197,8 +197,8 @@ def compute_scan_direction(
 
 # ---------- 沿方向推进窗口中心 ----------
 def step_along_direction(
-    center_uv: list[np.float32],
-    direction_uv: list[np.float32],
+    center_uv: list,
+    direction_uv: list,
     stride: int,
     window_size: int,
     width: int, height: int

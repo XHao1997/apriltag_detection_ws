@@ -83,12 +83,12 @@ class CenterPointFromCloud(Node):
 
     def _ensure_scan_init(self, width: int, height: int):
         if self.recog_u is None or self.recog_v is None:
-            self.recog_u = width / 2.0
-            self.recog_v = height / 2.0
+            self.recog_u = int(width / 2.0)
+            self.recog_v = int(height / 2.0)
 
         # 用空列表的“falsy”特性判断是否需要初始化
         if (not self.scan_center) or (not self.scan_dir):
-            self.scan_center = [float(self.recog_u), float(self.recog_v)]
+            self.scan_center = [int(self.recog_u), int(self.recog_v)]
             du, dv = compute_scan_direction((self.recog_u, self.recog_v), width, height)
             self.scan_dir = [float(du), float(dv)]
             self.win_buffer.clear()
