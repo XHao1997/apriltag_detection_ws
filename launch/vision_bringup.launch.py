@@ -10,6 +10,8 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     realsense_package_name = 'realsense2_camera'
+    depth2cloud2_package_name = 'depthimage_to_pointcloud2'
+
 
     # RealSense camera (aligned depth + profiles)
     rs_camera = IncludeLaunchDescription(
@@ -31,7 +33,7 @@ def generate_launch_description():
     )
 
     # Parameter file for camera intrinsics (used by apriltag_tf.py)
-    project_name = 'apriltag_detection'  # project name
+    project_name = 'soil_task_vision'  # project name
 
     # Prefer an absolute path resolved from the package share directory so
     # the node can open the file regardless of the current working directory.
@@ -47,7 +49,7 @@ def generate_launch_description():
 
     # AprilTag detector subscribes to the color image
     apriltag_node = Node(
-        package='apriltag_detection',
+        package=project_name,
         executable='apriltag_detection.py',
         name='apriltag_detection',
         output='screen',
@@ -59,7 +61,7 @@ def generate_launch_description():
 
     # TF node uses tag center + aligned depth
     apriltag_tf_node = Node(
-        package='apriltag_detection',
+        package=project_name,
         executable='apriltag_tf.py',
         name='apriltag_tf',
         output='screen',
@@ -86,10 +88,21 @@ def generate_launch_description():
         arguments=['-d', rviz_config],
     )
 
+
+    depth2cloud_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+                    os.path.join(
+                        get_package_share_directory(depth2cloud2_package_name),
+                        'launch',
+                        'depthimage_to_pointcloud2.launch.py'
+                    )
+                )
+    )
+
     return LaunchDescription([
         camera_intrinsics,   
         rs_camera,
-        apriltag_node,
+        # depth2cloud_launch,
         # apriltag_tf_node,
         # rviz2
     ])

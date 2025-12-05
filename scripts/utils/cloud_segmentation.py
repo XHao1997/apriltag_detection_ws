@@ -4,10 +4,10 @@ from typing import List, Tuple, Optional
 from geometry_msgs.msg import Point
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py import point_cloud2 as pc2
-from tf2_ros import Buffer, TransformException
+from tf2_ros import Buffer, TransformException # type: ignore
 from tf2_sensor_msgs.tf2_sensor_msgs import do_transform_cloud, transform_points
 import rclpy.time
-
+from dataclasses import dataclass
 
 # ---------- 平面拟合（最小二乘 / SVD） ----------
 def fit_plane_least_squares(points: np.ndarray):
@@ -25,6 +25,7 @@ def fit_plane_least_squares(points: np.ndarray):
     normal = normal / nrm
     d = -normal.dot(centroid)
     return normal, d, centroid
+
 def to_xyz_float32(cloud_in: PointCloud2) -> PointCloud2:
     """
     把输入 PointCloud2 转成只含 xyz 的 float32 点云。
@@ -246,3 +247,39 @@ def quaternion_to_rot_matrix(x: float, y: float, z: float, w: float) -> np.ndarr
         [2.0 * (xz - wy),       2.0 * (yz + wx),         1.0 - 2.0 * (xx + yy)],
     ], dtype=np.float64)
     return R
+
+
+
+from dataclasses import dataclass, field
+
+@dataclass
+class PlaneZStats:
+    z_values: np.ndarray
+
+    max_z: float = field(init=False)
+    min_z: float = field(init=False)
+    std_z: float = field(init=False)
+    mean_z: float = field(init=False)
+    threshold: float = field(init=False)
+
+    def __post_init__(self):
+        self.__cal_z_stats()
+        self.threshold = 0.0
+
+    def evaluate_flat_level(self, w_a: float = 0.9, w_b: float = 1) -> float:
+        self.__cal_z_stats()
+        self.threshold = (
+          w_a*self.std_z + w_b * abs(self.max_z - self.min_z)
+
+        )
+
+        return self.threshold
+
+    def __cal_z_stats(self):
+        if self.z_values.size == 0:
+            raise ValueError("z_values is empty")
+
+        self.max_z = float(np.max(self.z_values))
+        self.min_z = float(np.min(self.z_values))
+        self.std_z = float(np.std(self.z_values))
+        self.mean_z = float(np.mean(self.z_values))

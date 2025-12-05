@@ -19,7 +19,7 @@ class TreeBasePoseNode(Node):
         super().__init__('tree_base_pose_node')
         print(os.getcwd())
         # Parameters
-        self.declare_parameter('model_path', 'src/ros2_rm_robot/apriltag_detection/weights/best.pt')
+        self.declare_parameter('model_path', 'src/soil_task_vision/weights/best.pt')
         self.declare_parameter('image_topic', '/camera/camera/color/image_rect_raw')
         self.declare_parameter('keypoint_index', 0)  # which keypoint in the skeleton
         self.declare_parameter('debug', False)       # 是否画点并发布 debug 图像

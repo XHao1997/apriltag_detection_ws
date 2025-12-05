@@ -16,19 +16,14 @@ def generate_launch_description():
             get_package_share_directory(realsense_package_name), 'launch', 'rs_launch.py'
         )]),
         launch_arguments={
-                # 'initial_reset': 'True',
-                'depth_module.power_line_frequency': '0',
-                 'depth_module.depth_profile': '848x480x15',
-                 "rgb_camera.profile":"848x480x15",
+                'initial_reset': 'True',
+                'depth_module.depth_profile': '848x480x10',
+                "rgb_camera.profile":"848x480x10",
                 "accelerate_gpu_with_glsl.enable" : 'True',
-                "rgb_camera.color_profile":"640x480x15",
                 'align_depth.enable': 'True',
 
-                'pointcloud.enable': 'True',
+                # 'pointcloud.enable': 'True',
                 'pointcloud.ordered_pc': 'True',
-
-                # FIX: override bad default (3) with valid value
-                # 0 = Off, 1 = 50 Hz, 2 = 60 Hz
             }.items()
     )
     

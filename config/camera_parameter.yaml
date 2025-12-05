@@ -11,5 +11,5 @@ camera_intrinsics:
   model: inverse_brown_conrady
   ppx: 434.458251953125
   ppy: 241.777099609375
-  width: 640
+  width: 848
   depth_scale: 9.999999747378752e-05 
