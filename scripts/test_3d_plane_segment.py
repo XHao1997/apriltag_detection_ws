@@ -13,6 +13,8 @@ from geometry_msgs.msg import PointStamped, TransformStamped
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py import point_cloud2 as pc2
 from visualization_msgs.msg import Marker
+from std_msgs.msg import Bool
+
 from tf2_ros import Buffer, TransformListener, TransformBroadcaster
 
 _current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -20,16 +22,14 @@ _project_root = os.path.abspath(os.path.join(_current_dir, '..', '..'))
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from soil_task_vision.scripts.utils.cloud_segmentation import (
+from utils.cloud_segmentation import (
     transform_cloud_to_frame,
     extract_square_window_points,
 )
 
 
 def rotation_matrix_to_quaternion(R: np.ndarray):
-    """
-    3x3 rotation matrix -> (x,y,z,w) quaternion.
-    """
+    """3x3 rotation matrix -> (x,y,z,w) quaternion."""
     m00, m01, m02 = R[0, 0], R[0, 1], R[0, 2]
     m10, m11, m12 = R[1, 0], R[1, 1], R[1, 2]
     m20, m21, m22 = R[2, 0], R[2, 1], R[2, 2]
@@ -64,109 +64,165 @@ def rotation_matrix_to_quaternion(R: np.ndarray):
     return float(qx), float(qy), float(qz), float(qw)
 
 
+def stamp_to_sec(stamp) -> float:
+    """builtin_interfaces/Time -> float seconds"""
+    return float(stamp.sec) + float(stamp.nanosec) * 1e-9
+
+
 class CenterPointFromCloud(Node):
     def __init__(self):
         super().__init__('center_point_from_cloud')
 
-        # 参数
+        # ---------------- Parameters ----------------
         self.declare_parameter("target_frame", "base_link")
         self.declare_parameter("debug", True)
-        self.declare_parameter("window_size", 10)               # 正方形窗口大小（像素）
-        self.declare_parameter("probe_xy_min_threshold", 0.03)   # 3 cm
-        self.declare_parameter("probe_xy_max_threshold", 0.05)   # 5 cm
-        self.declare_parameter("scan_stride", 2)                 # 每一步沿射线移动的像素数
+
+        self.declare_parameter("window_size", 10)                 # 正方形窗口大小（像素）
+        self.declare_parameter("probe_xy_min_threshold", 0.05)    # 3 cm
+        self.declare_parameter("probe_xy_max_threshold", 0.10)    # 5 cm
+        self.declare_parameter("scan_stride", 2)                  # 每一步沿射线移动的像素数
         self.declare_parameter("min_points_per_window", 5)
+
+        # 时间同步：tree_base_pose vs tree_base_point_3d
+        self.declare_parameter("sync_tolerance_sec", 0.6)
+
+        # 输入“新鲜度”：相对点云 stamp，超过这个就认为没识别（立刻停止）
+        self.declare_parameter("max_input_age_to_cloud_sec", 0.8)
+
+        # 不持续更新：仅当 detection stamp 变化才发布一次
+        self.declare_parameter("publish_on_new_detection_only", True)
+
+        # 是否发布 valid 标志（强烈建议下游用它立刻停止）
+        self.declare_parameter("publish_valid_flag", True)
 
         self.target_frame = self.get_parameter("target_frame").get_parameter_value().string_value
         self.debug = self.get_parameter("debug").get_parameter_value().bool_value
+
         self.window_size = self.get_parameter("window_size").get_parameter_value().integer_value
-
-        self.probe_xy_min_threshold = (
-            self.get_parameter("probe_xy_min_threshold").get_parameter_value().double_value
-        )
-        self.probe_xy_max_threshold = (
-            self.get_parameter("probe_xy_max_threshold").get_parameter_value().double_value
-        )
-
+        self.probe_xy_min_threshold = self.get_parameter("probe_xy_min_threshold").get_parameter_value().double_value
+        self.probe_xy_max_threshold = self.get_parameter("probe_xy_max_threshold").get_parameter_value().double_value
         self.scan_stride = self.get_parameter("scan_stride").get_parameter_value().integer_value
-        self.min_points_per_window = (
-            self.get_parameter("min_points_per_window").get_parameter_value().integer_value
-        )
+        self.min_points_per_window = self.get_parameter("min_points_per_window").get_parameter_value().integer_value
 
-        # TF
+        self.sync_tolerance_sec = self.get_parameter("sync_tolerance_sec").get_parameter_value().double_value
+        self.max_input_age_to_cloud_sec = self.get_parameter("max_input_age_to_cloud_sec").get_parameter_value().double_value
+        self.publish_on_new_detection_only = self.get_parameter("publish_on_new_detection_only").get_parameter_value().bool_value
+        self.publish_valid_flag = self.get_parameter("publish_valid_flag").get_parameter_value().bool_value
+
+        # ---------------- TF ----------------
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.tf_broadcaster = TransformBroadcaster(self)
         self.use_tf = True
 
-        # 订阅
-        self.pc_sub = self.create_subscription(
-            PointCloud2, '/camera/pointcloud2', self.cb, 10
-        )
-        self.tree_uv_sub = self.create_subscription(
-            PointStamped, '/tree_base_pose', self.tree_uv_cb, 10
-        )
-        self.tree_base_3d_sub = self.create_subscription(
-            PointStamped, '/tree_base_point_3d', self.tree_base_3d_cb, 10
-        )
+        # ---------------- Subscribers ----------------
+        self.pc_sub = self.create_subscription(PointCloud2, '/camera/pointcloud2', self.cb, 10)
+        self.tree_uv_sub = self.create_subscription(PointStamped, '/tree_base_pose', self.tree_uv_cb, 10)
+        self.tree_base_3d_sub = self.create_subscription(PointStamped, '/tree_base_point_3d', self.tree_base_3d_cb, 10)
 
-        # 发布
+        # ---------------- Publishers ----------------
         self.center_pub = self.create_publisher(PointStamped, '/center_point', 10)
         self.center_mk_pub = self.create_publisher(Marker, '/center_point_marker', 10)
         self.soil_probe_pub = self.create_publisher(PointStamped, '/soil_probe_pose', 10)
         self.soil_probe_mk_pub = self.create_publisher(Marker, '/soil_probe_pose_marker', 10)
 
-        # 状态
+        self.valid_pub = self.create_publisher(Bool, '/soil_probe_valid', 10) if self.publish_valid_flag else None
+
+        # ---------------- State ----------------
         self.recog_u = None
         self.recog_v = None
-        self.tree_base_3d = None  # np.array([x, y, z])
+        self.tree_uv_stamp = None
+
+        self.tree_base_3d = None
+        self.tree_base_3d_stamp = None
+
+        # 用于“只在新识别时发布一次”
+        self._last_publish_key = None  # (uv_stamp_sec, base3d_stamp_sec)
 
         self.get_logger().info(
-            "CenterPointFromCloud: scan from tree_base UV towards image bottom center; "
-            "primary: z_var(window) < z_var(initial) and %.3f m < XY < %.3f m; "
-            "fallback: pick window whose XY is closest to %.3f m. "
-            "TF /soil_probe_pose: z-down, yaw = atan2(y, x)."
-            % (
-                self.probe_xy_min_threshold,
-                self.probe_xy_max_threshold,
-                self.probe_xy_min_threshold,
-            )
+            "CenterPointFromCloud:\n"
+            f"  target_frame={self.target_frame}\n"
+            f"  sync_tolerance_sec={self.sync_tolerance_sec}\n"
+            f"  max_input_age_to_cloud_sec={self.max_input_age_to_cloud_sec}\n"
+            f"  publish_on_new_detection_only={self.publish_on_new_detection_only}\n"
+            "  TF soil_probe_pose: z-down, yaw=atan2(y,x)\n"
+            "  If invalid -> publish /soil_probe_valid=false and stop publishing TF."
         )
 
-    # -------- UV 回调 --------
+    # ---------------- Helpers ----------------
+    def publish_valid(self, is_valid: bool):
+        if self.valid_pub is None:
+            return
+        msg = Bool()
+        msg.data = bool(is_valid)
+        self.valid_pub.publish(msg)
+
+    def tree_base_3d_valid(self) -> bool:
+        if self.tree_base_3d is None or self.tree_base_3d_stamp is None:
+            return False
+        if not isinstance(self.tree_base_3d, np.ndarray) or self.tree_base_3d.shape != (3,):
+            return False
+        return bool(np.all(np.isfinite(self.tree_base_3d)))
+
+    # ---------------- Callbacks ----------------
     def tree_uv_cb(self, msg: PointStamped):
-        u = int(round(msg.point.x))
-        v = int(round(msg.point.y))
-        self.recog_u = u
-        self.recog_v = v
-        if self.debug:
-            self.get_logger().info(f"[tree_uv_cb] (u,v)=({u},{v})")
-
-    # -------- 3D 树基 回调 --------
-    def tree_base_3d_cb(self, msg: PointStamped):
-        self.tree_base_3d = np.array(
-            [msg.point.x, msg.point.y, msg.point.z],
-            dtype=float
-        )
+        self.recog_u = int(round(msg.point.x))
+        self.recog_v = int(round(msg.point.y))
+        self.tree_uv_stamp = msg.header.stamp
         if self.debug:
             self.get_logger().info(
-                "[tree_base_3d_cb] (%.3f, %.3f, %.3f)" %
-                (msg.point.x, msg.point.y, msg.point.z)
+                f"[tree_uv_cb] (u,v)=({self.recog_u},{self.recog_v}), stamp={stamp_to_sec(self.tree_uv_stamp):.3f}"
             )
 
-    # -------- 点云回调 --------
+    def tree_base_3d_cb(self, msg: PointStamped):
+        self.tree_base_3d = np.array([msg.point.x, msg.point.y, msg.point.z], dtype=float)
+        self.tree_base_3d_stamp = msg.header.stamp
+        if self.debug:
+            self.get_logger().info(
+                "[tree_base_3d_cb] (%.3f, %.3f, %.3f), stamp=%.3f"
+                % (msg.point.x, msg.point.y, msg.point.z, stamp_to_sec(self.tree_base_3d_stamp))
+            )
+
     def cb(self, msg: PointCloud2):
-        if self.recog_u is None or self.recog_v is None:
-            if self.debug:
-                self.get_logger().warn("No /tree_base_pose yet, skip frame.")
+        # 任何无效输入 -> 立刻停止（valid=false + return，不发布 TF）
+        if self.recog_u is None or self.recog_v is None or self.tree_uv_stamp is None:
+            self.publish_valid(False)
             return
 
-        if self.tree_base_3d is None:
-            if self.debug:
-                self.get_logger().warn("No /tree_base_point_3d yet, skip frame.")
+        if not self.tree_base_3d_valid():
+            self.publish_valid(False)
             return
 
-        # 转到 target_frame
+        # tree_base_pose vs tree_base_point_3d 时间戳同步
+        t_uv = stamp_to_sec(self.tree_uv_stamp)
+        t_3d = stamp_to_sec(self.tree_base_3d_stamp)
+        if abs(t_uv - t_3d) > self.sync_tolerance_sec:
+            if self.debug:
+                self.get_logger().warn(
+                    f"Skip: uv/base3d not synced |{t_uv:.3f}-{t_3d:.3f}|>{self.sync_tolerance_sec:.3f}"
+                )
+            self.publish_valid(False)
+            return
+
+        # 相对点云 stamp 的“新鲜度”（没识别到就会立刻 stale）
+        t_cloud = stamp_to_sec(msg.header.stamp)
+        if (t_cloud - t_uv) > self.max_input_age_to_cloud_sec or (t_cloud - t_3d) > self.max_input_age_to_cloud_sec:
+            if self.debug:
+                self.get_logger().warn(
+                    f"Skip: input stale wrt cloud. "
+                    f"(cloud-uv)={(t_cloud-t_uv):.3f}, (cloud-3d)={(t_cloud-t_3d):.3f}, "
+                    f"limit={self.max_input_age_to_cloud_sec:.3f}"
+                )
+            self.publish_valid(False)
+            return
+
+        # 不持续更新：只在新 detection 来时才处理一次
+        publish_key = (t_uv, t_3d)
+        if self.publish_on_new_detection_only and self._last_publish_key == publish_key:
+            return  # 不重复发布，不更新 TF
+        # 注意：只有成功发布后才更新 _last_publish_key
+
+        # 点云转到 target_frame
         cloud = transform_cloud_to_frame(
             self.tf_buffer,
             msg,
@@ -174,112 +230,77 @@ class CenterPointFromCloud(Node):
             logger=self.get_logger()
         )
         if cloud.height == 1:
+            self.publish_valid(False)
             return
 
         width, height = cloud.width, cloud.height
         if width == 0 or height == 0:
+            self.publish_valid(False)
             return
 
-        pts = pc2.read_points_numpy(
-            cloud, field_names=(['x', 'y', 'z']), skip_nans=False
-        )
+        pts = pc2.read_points_numpy(cloud, field_names=(['x', 'y', 'z']), skip_nans=False)
         if pts.size == 0:
+            self.publish_valid(False)
             return
 
         try:
             pts2d = pts.reshape((height, width, 3))
         except ValueError:
+            self.publish_valid(False)
             return
 
-        # ---------------- 1) 初始窗口：树基像素附近 ----------------
+        # 1) 初始窗口：树基像素附近
         init_pts, init_bbox = extract_square_window_points(
-            pts2d,
-            [self.recog_u, self.recog_v],
-            self.window_size,
-            width, height
+            pts2d, [self.recog_u, self.recog_v], self.window_size, width, height
         )
         if init_pts.shape[0] < self.min_points_per_window:
-            if self.debug:
-                self.get_logger().warn(
-                    "Initial window has too few points: %d" % init_pts.shape[0]
-                )
+            self.publish_valid(False)
             return
+        base_z_var = float(np.var(init_pts[:, 2]))
 
-        base_z_vals = init_pts[:, 2]
-        base_z_var = float(np.var(base_z_vals))
-        if self.debug:
-            self.get_logger().info(
-                "[init window] bbox=%s, z_var=%.6f" % (init_bbox, base_z_var)
-            )
-
-        # ---------------- 2) 扫描方向：tree_base 像素 -> 图像底部中心像素 ----------------
+        # 2) 扫描方向：tree_base 像素 -> 图像底部中心像素
         bottom_center_u = width / 2.0
         bottom_center_v = height - 1.0
-
         start_uv = np.array([float(self.recog_u), float(self.recog_v)], dtype=np.float32)
         end_uv = np.array([bottom_center_u, bottom_center_v], dtype=np.float32)
 
         direction_uv = end_uv - start_uv
-        norm_dir = np.linalg.norm(direction_uv)
+        norm_dir = float(np.linalg.norm(direction_uv))
         if norm_dir < 1e-6:
             direction_uv = np.array([0.0, 1.0], dtype=np.float32)
         else:
-            direction_uv /= norm_dir  # 单位向量
+            direction_uv = direction_uv / norm_dir
 
-        if self.debug:
-            self.get_logger().info(
-                "scan direction (UV) from tree_base to bottom-center = (%.3f, %.3f)"
-                % (direction_uv[0], direction_uv[1])
-            )
-
-        step_px = max(1, self.scan_stride)
-
-        # 对角线长度（像素）作为最大扫描距离
+        step_px = max(1, int(self.scan_stride))
         max_distance = math.sqrt(width * width + height * height)
         max_steps = int(max_distance / step_px) + 2
 
-        # 为了让窗口完整地落在图像内，中心必须在 [half, W-half), [half, H-half)
         half = self.window_size // 2
         u_min, u_max = half, max(half, width - half)
         v_min, v_max = half, max(half, height - half)
 
-        # ---------------- 3) 第一轮：严格模式 ----------------
         best_centroid = None
         best_dist_xy = None
         best_z_var = None
         best_step = None
 
+        # 3) 第一轮：严格模式（z_var 更平 + 3~5cm）
         for i in range(1, max_steps + 1):
             offset = direction_uv * float(i * step_px)
             u_center = start_uv[0] + offset[0]
             v_center = start_uv[1] + offset[1]
 
             if not (u_min <= u_center < u_max and v_min <= v_center < v_max):
-                if self.debug:
-                    self.get_logger().info(
-                        "scan hit image border at step %d (u=%.1f, v=%.1f), stop first pass."
-                        % (i, u_center, v_center)
-                    )
                 break
 
-            window_pts, bbox = extract_square_window_points(
-                pts2d,
-                [u_center, v_center],
-                self.window_size,
-                width, height
+            window_pts, _ = extract_square_window_points(
+                pts2d, [u_center, v_center], self.window_size, width, height
             )
             if window_pts.shape[0] < self.min_points_per_window:
                 continue
 
-            z_vals = window_pts[:, 2]
-            z_var = float(np.var(z_vals))
-
+            z_var = float(np.var(window_pts[:, 2]))
             if z_var >= base_z_var:
-                if self.debug:
-                    self.get_logger().debug(
-                        "step %d: z_var=%.6f >= base_z_var=%.6f, skip."
-                        % (i, z_var, base_z_var)
-                    )
                 continue
 
             centroid = np.mean(window_pts, axis=0)
@@ -288,16 +309,6 @@ class CenterPointFromCloud(Node):
             dist_xy = math.hypot(dx, dy)
 
             if not (self.probe_xy_min_threshold < dist_xy < self.probe_xy_max_threshold):
-                if self.debug:
-                    self.get_logger().debug(
-                        "step %d: dist_xy=%.4f not in (%.4f, %.4f), skip."
-                        % (
-                            i,
-                            dist_xy,
-                            self.probe_xy_min_threshold,
-                            self.probe_xy_max_threshold,
-                        )
-                    )
                 continue
 
             best_centroid = centroid
@@ -306,19 +317,8 @@ class CenterPointFromCloud(Node):
             best_step = i
             break
 
-        # ---------------- 4) 第二轮：fallback（只看距离，越接近 3cm 越好） ----------------
+        # 4) fallback：只看距离 >= 3cm，越接近 3cm 越好
         if best_centroid is None:
-            if self.debug:
-                self.get_logger().info(
-                    "First pass found no window with z_var < base_z_var and "
-                    "(%.3f m < XY < %.3f m), fallback to nearest XY >= %.3f m."
-                    % (
-                        self.probe_xy_min_threshold,
-                        self.probe_xy_max_threshold,
-                        self.probe_xy_min_threshold,
-                    )
-                )
-
             best2_centroid = None
             best2_dist_xy = None
             best2_step = None
@@ -330,18 +330,10 @@ class CenterPointFromCloud(Node):
                 v_center = start_uv[1] + offset[1]
 
                 if not (u_min <= u_center < u_max and v_min <= v_center < v_max):
-                    if self.debug:
-                        self.get_logger().info(
-                            "fallback scan hit image border at step %d (u=%.1f, v=%.1f), stop."
-                            % (i, u_center, v_center)
-                        )
                     break
 
-                window_pts, bbox = extract_square_window_points(
-                    pts2d,
-                    [u_center, v_center],
-                    self.window_size,
-                    width, height
+                window_pts, _ = extract_square_window_points(
+                    pts2d, [u_center, v_center], self.window_size, width, height
                 )
                 if window_pts.shape[0] < self.min_points_per_window:
                     continue
@@ -362,19 +354,15 @@ class CenterPointFromCloud(Node):
                     best2_score = score
 
             if best2_centroid is None:
-                if self.debug:
-                    self.get_logger().info(
-                        "fallback: still no window with dist_xy >= %.3f m, give up."
-                        % self.probe_xy_min_threshold
-                    )
+                self.publish_valid(False)
                 return
 
             best_centroid = best2_centroid
             best_dist_xy = best2_dist_xy
             best_step = best2_step
-            best_z_var = None  # fallback 不再限制 z_var
+            best_z_var = None
 
-        # ---------------- 5) 发布 PointStamped ----------------
+        # 5) 发布 PointStamped / TF
         fx, fy, fz = float(best_centroid[0]), float(best_centroid[1]), float(best_centroid[2])
 
         center_msg = PointStamped()
@@ -391,43 +379,33 @@ class CenterPointFromCloud(Node):
         soil_msg.point.z = fz
         self.soil_probe_pub.publish(soil_msg)
 
-        # ---------------- 6) 姿态：z 轴朝下，绕 z 轴旋转 atan2(y, x) ----------------
-        # yaw 取 soil_probe 在 base_link 下的位置 (fx, fy) 的方位角
-        yaw = math.atan2(fy, fx)
+        # 姿态：z 轴朝下；yaw = atan2(y, x) 绕 z 轴旋转
+        yaw = math.atan2(fy, fx)+np.pi
 
-        # z 轴朝下
         z_axis = np.array([0.0, 0.0, -1.0], dtype=np.float64)
-
-        # 绕 z 轴的 yaw，定义 x 轴在 XY 平面上的方向
         x_axis = np.array([math.cos(yaw), math.sin(yaw), 0.0], dtype=np.float64)
 
-        # y = z × x，保证右手系
         y_axis = np.cross(z_axis, x_axis)
-        ny = np.linalg.norm(y_axis)
+        ny = float(np.linalg.norm(y_axis))
         if ny < 1e-6:
-            # 极端情况，给个默认 y 轴
             y_axis = np.array([0.0, 1.0, 0.0], dtype=np.float64)
         else:
             y_axis = y_axis / ny
 
-        # 再正交化一次 x = y × z
         x_axis = np.cross(y_axis, z_axis)
-        x_axis = x_axis / np.linalg.norm(x_axis)
+        x_axis = x_axis / float(np.linalg.norm(x_axis))
 
-        # 旋转矩阵列向量为 (x_axis, y_axis, z_axis)
         R = np.column_stack((x_axis, y_axis, z_axis))
         qx, qy, qz, qw = rotation_matrix_to_quaternion(R)
 
-        # ---------------- 7) 发布 TF: base_link -> soil_probe_pose ----------------
         tf_msg = TransformStamped()
         tf_msg.header.stamp = cloud.header.stamp
-        tf_msg.header.frame_id = self.target_frame      # parent: base_link
-        tf_msg.child_frame_id = "soil_probe_pose"       # child: soil_probe_pose
+        tf_msg.header.frame_id = self.target_frame
+        tf_msg.child_frame_id = "soil_probe_pose"
 
         tf_msg.transform.translation.x = fx
         tf_msg.transform.translation.y = fy
         tf_msg.transform.translation.z = fz
-
         tf_msg.transform.rotation.x = qx
         tf_msg.transform.rotation.y = qy
         tf_msg.transform.rotation.z = qz
@@ -435,53 +413,22 @@ class CenterPointFromCloud(Node):
 
         self.tf_broadcaster.sendTransform(tf_msg)
 
-        # ---------------- 8) Debug log & markers ----------------
+        # 成功：valid=true + 更新 last key（从此不再持续更新）
+        self.publish_valid(True)
+        self._last_publish_key = publish_key
+
         if self.debug:
             if best_z_var is not None:
                 self.get_logger().info(
-                    "[SOIL_PROBE primary] step=%d, probe=(%.3f, %.3f, %.3f), "
-                    "dist_xy=%.3f (in (%.3f, %.3f)), z_var<base_z_var, yaw=atan2(%.3f, %.3f)=%.3f"
-                    % (
-                        best_step,
-                        fx, fy, fz,
-                        best_dist_xy,
-                        self.probe_xy_min_threshold,
-                        self.probe_xy_max_threshold,
-                        fy, fx, yaw,
-                    )
+                    f"[SOIL_PROBE primary] step={best_step}, p=({fx:.3f},{fy:.3f},{fz:.3f}), "
+                    f"dist_xy={best_dist_xy:.3f}, yaw={yaw:.3f}"
                 )
             else:
                 self.get_logger().info(
-                    "[SOIL_PROBE fallback] step=%d, probe=(%.3f, %.3f, %.3f), "
-                    "dist_xy=%.3f (>= %.3f, nearest to it), yaw=atan2(%.3f, %.3f)=%.3f"
-                    % (
-                        best_step,
-                        fx, fy, fz,
-                        best_dist_xy,
-                        self.probe_xy_min_threshold,
-                        fy, fx, yaw,
-                    )
+                    f"[SOIL_PROBE fallback] step={best_step}, p=({fx:.3f},{fy:.3f},{fz:.3f}), "
+                    f"dist_xy={best_dist_xy:.3f}, yaw={yaw:.3f}"
                 )
 
-            # 中心点 marker（红）
-            mk_center = Marker()
-            mk_center.header = cloud.header
-            mk_center.ns = "scan_center"
-            mk_center.id = 0
-            mk_center.type = Marker.SPHERE
-            mk_center.action = Marker.ADD
-            mk_center.pose.position.x = fx
-            mk_center.pose.position.y = fy
-            mk_center.pose.position.z = fz
-            mk_center.pose.orientation.w = 1.0
-            mk_center.scale.x = mk_center.scale.y = mk_center.scale.z = 0.05
-            mk_center.color.r = 1.0
-            mk_center.color.g = 0.0
-            mk_center.color.b = 0.0
-            mk_center.color.a = 1.0
-            self.center_mk_pub.publish(mk_center)
-
-            # soil probe marker（绿）
             mk_probe = Marker()
             mk_probe.header = cloud.header
             mk_probe.ns = "soil_probe"

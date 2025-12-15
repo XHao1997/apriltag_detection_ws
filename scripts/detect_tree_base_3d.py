@@ -12,7 +12,7 @@ from geometry_msgs.msg import PointStamped, TransformStamped
 from sensor_msgs.msg import PointCloud2
 from sensor_msgs_py import point_cloud2 as pc2
 
-from tf2_ros import Buffer, TransformListener, TransformBroadcaster, TransformException
+from tf2_ros import Buffer, TransformListener, TransformBroadcaster, TransformException # type: ignore
 
 
 def quaternion_to_rot_matrix(x: float, y: float, z: float, w: float) -> np.ndarray:

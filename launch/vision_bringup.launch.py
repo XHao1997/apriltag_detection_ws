@@ -73,6 +73,29 @@ def generate_launch_description():
             'camera_frame': 'camera_color_optical_frame',
         }],
     )
+    treebase_2d_node = Node(
+        package=project_name,
+        executable='tree_keypoint.py',
+        name='tree_base_pose_node',
+        output='screen',
+        emulate_tty=True,
+        
+    )
+    treebase_3d_node = Node(
+        package=project_name,
+        executable='detect_tree_base_3d.py',
+        name='tree_base_to_3d_node_pc',
+        output='log',
+        emulate_tty=True,
+    )
+
+    probe_tf_node = Node(
+        package=project_name,
+        executable='test_3d_plane_segment.py',
+        name='center_point_from_cloud',
+        output='log',
+        emulate_tty=False,
+    )
     # RViz2 visualization
     rviz_config = os.path.join(
         get_package_share_directory(project_name),
@@ -100,8 +123,11 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        camera_intrinsics,   
-        rs_camera,
+        treebase_2d_node,
+        treebase_3d_node,
+        probe_tf_node,
+        # camera_intrinsics,   
+        # rs_camera,
         # depth2cloud_launch,
         # apriltag_tf_node,
         # rviz2

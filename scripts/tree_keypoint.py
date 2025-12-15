@@ -111,7 +111,7 @@ class TreeBasePoseNode(Node):
             return
 
         # Run YOLO pose inference
-        results = self.model(cv_image, conf=0.15, verbose=False)
+        results = self.model(cv_image, conf=0.5, verbose=False)
 
         if len(results) == 0:
             self.get_logger().warn('YOLO returned no results')
